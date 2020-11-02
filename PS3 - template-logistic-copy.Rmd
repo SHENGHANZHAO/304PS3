@@ -1,0 +1,171 @@
+---
+title: 'Biden vs. Trump: Who Will Win the Overall Popular Vote of 2020 U.S. Presidential
+  Election?'
+author: "Jiaqi Wu and Shenghan Zhao"
+date: "Nov 02, 2020"
+output:
+  word_document: default
+  html_document:
+    df_print: paged
+  pdf_document: default
+subtitle: Our statistical model forecasts Biden having a 56.7% probability of winning.
+---
+
+```{r setup, include=FALSE}
+library(dplyr)
+setwd("C:/Users/12913/Downloads")
+census_data <- read.csv("census_data.csv")
+data <- read.csv("survey_data.csv")
+survey <- data
+census <- census_data
+census <- census %>% rename(state = statefip,
+                  gender = sex,
+                  education = educd,
+                  household_income = hhincome,
+                  race_ethnicity = race)
+
+```
+
+**Code and data supporting this analysis is available at:**  
+https://
+
+
+# Model 
+
+The intention of this problem set is to predict the popular vote results of the 2020 American federal election. To predict the outcome, we are employing a post-stratification technique. In the following sub-sections, we will provide clarifications for the model specifics and the post-stratification calculation, and particularly how we use Rstudio to perform these tasks.  
+ 
+ 
+## Model Specifics 
+ 
+We will be building a logistic regression model to model the odds of voters who will vote for Joe Biden representing the Democratic Party. Logistic regression is a statistical model used to model a binary dependent variable with only two potential outcomes. This model fits our study goal because the outcome we are interested in is binary (i.e., the proportion of voting for Joe Biden versus Donald Trump). We will be using age, gender, education, household income, race ethnicity, and state to model the probability of voting for Joe Biden. We choose this set of independent variables because the changes in voters' demographics would potentially shift the patterns of party identification. The regression model we are using is: 
+
+$$ y = \beta_0 + \beta_1 x_{age_i} + \beta_{j[i]}  x_{gender_{j[i]}} + 
+\beta_{j[i]}  x_{education_{j[i]}} + \beta_{j[i]}  x_{household\_income_{j[i]}} + 
+\beta_{j[i]}  x_{race\_ethnicity_{j[i]}} + \beta_{j[i]}  x_{state_{j[i]}} + \epsilon $$ 
+
+
+Where $y$ represents the log odds of voters who will vote for Joe Biden. Similarly, $\beta_0$ represents the intercept of the model, which is the log odds of voting for Joe Biden with age 0, female, education level of college, household income below or near poverty level, race of Asian, and state of Alaska.  Additionally, $\beta_1$ represents that for one unit increase in age, we expect the log odds of voting for Joe Biden to increase by $\beta_1$. Moreover, the terms $\beta_{j[i]}$ represents the varying coefficients associated with each categorical variable. The subscript $j[i]$ indicates the category to which the $i$th respondent belongs. For example, the $\beta_{j[i]}$ on “race_ethnicity” takes value from {$\beta_{White}$, $\beta_{Black}$, $\beta_{Asian}$, $\beta_{Others}$}, where the data on race ethnicity is categorized into four groups: White, Black, Asian, and Others. The base group is Asian. For instance, the coefficient on White represents that an individual whose race ethnicity is white will have a $\beta_{White}$ change in the log odds of voting for Joe Biden compared to the base group. 
+  
+```{r, include=FALSE}
+col.survey<-c("gender","education","state","household_income" ,"race_ethnicity", "vote_2020")
+survey[col.survey] <- lapply(survey[col.survey], factor) 
+col.census<-c("gender","education","state","household_income" ,"race_ethnicity")
+census[col.census] <- lapply(census[col.census], factor) 
+survey$vote_2020 <- relevel(survey$vote_2020, ref = "Trump")  ## prediction p of Biden being elected
+model_logit1 <- glm(vote_2020~age+gender+education+household_income+race_ethnicity+state,
+                     data = survey, 
+                     family=binomial)
+
+summary(model_logit1)
+```
+
+## Post-Stratification 
+ 
+To predict the proportion of voters who will vote for Joe Biden, we need to perform a post-stratification analysis. Post-stratification is a technique to adjust the estimates, essentially a weighted average of the estimates of different cells partitioned from the population after building a model that is fitted to the observed data. This technique helps to obtain more precise estimates by increasing the representativeness of the sample with the primary use to reduce nonresponse bias in surveys. In order to do this, we first need an estimate of the voter outcomes for each post-stratification cell. Here we partition the population into cells based on different states. On one hand, states typically have responsibility for making specific rules of elections. In addition to the general requirements of being a U.S. citizen with an age of 18 or above, people should also satisfy the detailed voter registration requirements by each state to become an eligible voter. On the other hand, the presidential candidates and their campaign staff tend to focus on state-by-state strategies, aiming at increasing their support in specific states. Therefore, we choose “state” as our post-stratification cell because it is likely to influence the voter outcomes. We will then estimate the proportion of voters who will vote for Joe Biden in each cell using the logistic regression model described above, based on the survey data collected from the Voters Study Group. Finally, we will weight the estimates within each cell by the respective population size of that cell and aggregate those values, then divide that by the entire population size. Then we will get the census-level estimates. 
+
+
+## Data Cleaning and Model Diagnosis  
+
+To better perform modelling and analysis, we start with cleaning the dataset. First, we remove observations of those who have not registered to vote and those who do not have intention to vote from the survey data, by assuming that those people will not participate in the vote. Second, we remove observations of those who are below 18 years old and not citizens of the U.S. from the census data, because an eligible voter must be U.S. citizen and at least 18 years of age according to the voting laws in the U.S. Third, as the categories within each categorical variable are different between sample data and census data, we recategorize the data in both datasets in order to have them matched with each other and more organized. For instance, we recategorize household income into five groups of {less than \$20,000; \$20,000-\$44,999; \$45,000-\$149,999; \$150,000-\$199,999; above $200,000}, respectively, representing the income class of {below or near poverty level, low income, middle class, high income, highest tax brackets}. The purpose of recategorizing the data is to ensure that we are able to predict census-level estimates based on sample data. 
+ 
+For model diagnosis, we use the AUC to test for predictive accuracy of our model in estimating the popular vote outcomes. The AUC stands for the Area under the ROC Curve where the ROC curve shows the diagnostic ability of binary classifiers. Basically, the AUC evaluates the predictive performance of a logistic regression model about how well the model is capable of distinguishing between two potential outcomes. A higher value represents that the model is better at predicting the classification of the dependent variable. Figure 1 shows the ROC curve of our model. The AUC is 0.712, indicating that there is a 71.2% chance that our model will be able to correctly distinguish whether an individual voter will vote for Joe Biden or Donald Trump. Based on this criteria, the capability of our model in predicting the voter outcomes is good. 
+
+
+```{r, include=FALSE}
+library(pROC)
+model_logit1 <- glm(vote_2020~age+gender+education+household_income+race_ethnicity+state,
+                     data = survey, 
+                     family=binomial)
+
+summary(model_logit1)
+
+prob.1<-predict(model_logit1,type=c('response'))
+result_model1<-ifelse(prob.1>=0.5,"Biden","Trump")
+survey.result<-cbind(data,result_model1)
+roc.1 <- roc(survey.result$vote_2020, prob.1)
+
+```
+```{r, echo=FALSE}
+plot(roc.1, auc.polygon=TRUE, print.auc = TRUE,asp = NA)
+title("Figure 1")
+
+```
+
+
+# Results
+
+We estimate that the proportion of voters in favour of  Democratic Party will be 0.567. This is based on our post-stratification analysis of the proportion of voters in favour of voting for Joe Biden modelled by a logistic regression model, which accounted for age, gender, education, household income, race ethnicity, and state. Figure 2 shows the estimated proportion of voters who will vote for Joe Biden and  Donald Trump, respectively.  
+```{r,include=FALSE}
+
+a<- count(census,state)
+census$estimate <-
+  model_logit1 %>%
+  predict(newdata = census)
+census$estimate <-
+  exp(census$estimate)/(1+exp(census$estimate))
+b <- aggregate(x = census$estimate,
+          by = list(census$state),
+          FUN = mean)
+census_final <- cbind.data.frame(b,a$n)
+census_final
+census_final %>%
+  mutate(alp_predict_prop = x*a$n) %>%
+  summarise(alp_predict = sum(alp_predict_prop)/sum(a$n))
+alp_predict = 0.5667714
+bar_plot <- c(100*alp_predict,100*(1-alp_predict) )
+
+```
+
+```{r, echo = FALSE}
+names(bar_plot) = c("Biden was elected", "Trump was elected")
+barplot(bar_plot,ylab = "probility in percentage", main = "Proportion of Voting for Biden vs. Trump", sub = "Figure 2")
+```
+
+# Discussion
+
+## Summary
+
+The sample data we use in this study is based on the survey data collected by the Voters Study Group. The census data is obtained from IPUMS USA which provides access to U.S. census data including a wide variety of attributes. To conduct forecasts, we first build a logistic regression model to model the log odds of voters who will vote for Joe Biden using a set of demographic variables including age, gender, education, household income, race ethnicity, and state. We then employ a post-stratification technique by partitioning the sample into different cells based on state, using the sample to estimate the voter result in 2020 within each cell, and finally weighting the cell-level estimates by their relative proportion in the census population to get the population-level estimate. Post-stratification is to correct the estimates of a non-representative sample. Even though the sample population is initially representative and randomly drawn, a low response rate may lead to biases on results. Naturally, for a voluntary survey, the greatest threat to the accuracy of the survey estimates is the issue of non-response. Low response rate increases survey bias and weakens sample representativeness. Thus, the process of post-stratification plays an important role in our study which contributes to our goal in predicting the popular vote outcomes of the 2020 American federal election more precisely. However, the results are still biased because timeliness of the survey data we use is weak, where the survey data is updated on June 25th, 2020 while the actual election date is on November 3rd, 2020. During the period between these two dates, the vote intentions and preferences of voters may change. Consequently, the sample data becomes less representative, which will be discussed in detail in the following sub-section of weaknesses. 
+
+## Conclusion
+
+Based on the estimated proportion of voters in favour of voting for Joe Biden being 0.567, we predict that Democratic Party represented by Joe Biden will win the federal election over Republican Party represented by Donald Trump. Furthermore, from a broader view outside of the primary goal of our study, election forecasting also provides a useful lesson about improving the accuracy of the estimate of voter outcomes for future elections by exploring different forecasting models. Moreover, a prediction on election results ahead of time also gives insights into how many efforts each political party should make to engage voters and gain more support, for the purpose of increasing the confidence and probability in winning the election. 
+
+## Weaknesses
+
+One of the drawbacks regarding the survey design is that the sample data collected by the survey is not updated fast. Here the latest survey data that we are able to obtain is updated on June 25, 2020, which is approximately four months ago and thus not timely. Those surveyed individuals may probably change their opinions resulting from many uncertainties such as the presidential election campaign events and the election debates held during recent four months. Also, the number of observations in the sample after data cleaning is 4229, which is quite small compared to the census data size of  220984. Therefore, the survey data we use is not representative enough to predict the actual voter outcomes. Furthermore, there are deviations regarding the categories within each categorical variable between survey data and census data. For example, the information about state is categorized into the form of two-letter state abbreviation in survey data while it is in the form of the state's full name in census data. Likewise, the categories within all of the categorical independent variables that we use in our model are not exactly matched with each other between survey data and census data. Therefore, before building a model and employing post-stratification to predict the actual voter outcomes based on the survey data, we have to clean the data using Rstudio to ensure that the categories within each categorical variable are consistent with each other between survey data and census data. As there are many different categories within each variable, the cleaning process is quite time-consuming. 
+
+## Next Steps
+
+First of all, a critical subsequent action is to compare our estimate with the actual election results, which provides a straightforward verification on how accurate our prediction is. Second, we need to think of an alternative that is able to solve the issue of the timeliness of sample data in order to improve the predictions in future elections. According to the article “Forecasting elections with non-representative polls”, a non-representative poll is considered as an alternative, which is more convenient and cost-effective than traditional survey methods (Wang, W., et al., 2014). In brief, a series of daily voter intention polls are conducted on a popular online platform via surveys that collects responses on voter intention and basic demographic information over a period of time leading up to the election date. This allows to obtain a large number of highly non-representative samples as well as increase the timeliness and relevance of the sample data as they can be updated faster and more regularly. The following essential step is to adjust the responses using multilevel regression and post-stratification (MRP) by first partitioning the large sample into thousands of cells based on all possible combinations of various demographic attributes, then using a multilevel logistic regression model to estimate the voter outcomes within each cell. The post-stratification process is similar to what we have done above but with consideration of much more cells. The technique of MRP helps to correct the model estimates when the sample is highly biased and the raw responses are potentially highly deviated from the actual outcomes. Third, when designing the survey, the choices provided by each question should be exactly consistent with the categories within each categorical variable in the census data. By doing this, we will be able to save much time without the needs for data cleaning. With these further work, we will be able to estimate the election outcomes more efficiently and precisely in the future. Moreover, this study is to predict the popular vote results of the election. However, in reality, presidents in the U.S. are elected by “electors” through a process called the Electoral College. Therefore, it is worth further making forecasts of the results from the electoral vote. 
+
+
+# References
+
+Amadeo, K. (2020, September 24). What Is Middle-Class Income? Retrieved November 02, 2020, from https://www.thebalance.com/definition-of-middle-class-income-4126870 
+
+Campbell, J., & Mann, T. (1996, September 01). Forecasting the Presidential Election: What can we learn from the models? Retrieved November 02, 2020, from https://www.brookings.edu/articles/forecasting-the-presidential-election-what-can-we-learn-from-the-models/ 
+
+Hadley Wickham, Romain François, Lionel Henry and Kirill Müller (2020). dplyr: A Grammar of Data Manipulation. R package version 1.0.2. https://CRAN.R-project.org/package=dplyr
+
+Hadley Wickham and Evan Miller (2020). haven: Import and Export 'SPSS', 'Stata' and 'SAS' Files. R package version 2.3.1. https://CRAN.R-project.org/package=haven 
+
+Narkhede, S. (2019, May 26). Understanding AUC - ROC Curve. Retrieved October 19, 2020, from https://towardsdatascience.com/understanding-auc-roc-curve-68b2303cc9c5    
+
+Powell, R. (2004). The Strategic Importance of State-Level Factors in Presidential Elections. Publius, 34(3), 115-130. Retrieved November 2, 2020, from http://www.jstor.org/stable/20184913 
+
+Presidential Election Process. (n.d.). Retrieved November 02, 2020, from https://www.usa.gov/election
+
+RStudio Team. (2020). RStudio: Integrated Development Environment for R. Boston, MA. Retrieved from http://www.rstudio.com/   
+ 
+Steven Ruggles, Sarah Flood, Ronald Goeken, Josiah Grover, Erin Meyer, Jose Pacas and Matthew Sobek. IPUMS USA: Version 10.0 [ACS2018]. Minneapolis, MN: IPUMS, 2020. https://doi.org/10.18128/D010.V10.0 
+
+Tausanovitch, Chris and Lynn Vavreck. 2020. Democracy Fund + UCLA Nationscape, October 10-17, 2019 (version 20200814). Retrieved from https://www.voterstudygroup.org/publication/nationscape-data-set 
+
+Wang, W., et al., Forecasting elections with non-representative polls. International Journal of Forecasting (2014), http://dx.doi.org?10.1016?j.ijforecast.2014.06.001 
+
+Who Can and Can't Vote in U.S. Elections. (n.d.). Retrieved November 02, 2020, from https://www.usa.gov/who-can-vote 
+
+Wickham et al., (2019). Welcome to the tidyverse. Journal of Open Source Software, 4(43), 1686, https://doi.org/10.21105/joss.01686   
+
+Wide Gender Gap, Growing Educational Divide in Voters' Party Identification. (2020, August 28). Retrieved November 02, 2020, from https://www.pewresearch.org/politics/2018/03/20/wide-gender-gap-growing-educational-divide-in-voters-party-identification/ 
